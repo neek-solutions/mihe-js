@@ -3,9 +3,9 @@
 # Build @mihe-dev/protocol, @mihe-dev/js and @mihe-dev/react into publishable packages.
 #
 #   sdk/scripts/build-packages.sh        # → sdk/dist-packages/{protocol,js,react}
-#   npm publish sdk/dist-packages/protocol
-#   npm publish sdk/dist-packages/js
-#   npm publish sdk/dist-packages/react
+#   npm publish ./sdk/dist-packages/protocol
+#   npm publish ./sdk/dist-packages/js
+#   npm publish ./sdk/dist-packages/react
 #
 # @mihe-dev/js also gets two self-contained files (scripts/bundle-js.mjs), so a
 # page with no bundler can load it from a CDN or a static folder.

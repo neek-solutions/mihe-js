@@ -29,7 +29,9 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
-      # In dependency order: each package depends on the one before it.
-      - run: npm publish dist-packages/protocol --provenance --access public
-      - run: npm publish dist-packages/js --provenance --access public
-      - run: npm publish dist-packages/react --provenance --access public
+      # In dependency order: each package depends on the one before it. The
+      # leading ./ matters: without it npm reads `dist-packages/js` as a
+      # GitHub repository, user/repo, and tries to fetch it.
+      - run: npm publish ./dist-packages/protocol --provenance --access public
+      - run: npm publish ./dist-packages/js --provenance --access public
+      - run: npm publish ./dist-packages/react --provenance --access public
