@@ -1,0 +1,11 @@
+{
+  "name": "@mihe-dev/protocol",
+  "version": "0.1.0",
+  "description": "Wire protocol types for the Mihe. Generated from the runtime; do not edit by hand.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "files": ["src"],
+  "license": "MIT"
+}

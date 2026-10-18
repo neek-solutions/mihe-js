@@ -1,0 +1,18 @@
+{
+  // The published build of @mihe-dev/protocol (scripts/build-packages.sh).
+  // Development type-checks through ../tsconfig.json instead; this one emits.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "types": []
+  },
+  "include": ["src"]
+}

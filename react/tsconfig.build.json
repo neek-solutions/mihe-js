@@ -1,0 +1,27 @@
+{
+  // The published build of @mihe-dev/react (scripts/build-packages.sh).
+  // Development type-checks through ../tsconfig.json instead; this one emits,
+  // and resolves @mihe-dev/protocol and @mihe-dev/js to those packages' built types,
+  // so the emitted declarations import them by name, as an installed copy will.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "rootDir": "src",
+    "types": [],
+    "paths": {
+      "@mihe-dev/protocol": ["../dist-packages/protocol/dist/index.d.ts"],
+      "@mihe-dev/js": ["../dist-packages/js/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

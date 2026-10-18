@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["vitest/globals"],
+    // No baseUrl on purpose: this directory contains a package folder named
+    // `react/`, and a baseUrl of `.` makes `import from "react"` resolve to it
+    // rather than to the React package — a silent and very confusing failure.
+    // `paths` resolves relative to this file without needing one.
+    "paths": {
+      "@mihe-dev/protocol": ["./protocol/src/index.ts"],
+      "@mihe-dev/js": ["./js/src/index.ts"],
+      "@mihe-dev/react": ["./react/src/index.ts"]
+    }
+  },
+  "include": [
+    "protocol/src",
+    "js/src",
+    "js/tests",
+    "react/src",
+    "react/tests",
+    "vitest.config.ts"
+  ]
+}

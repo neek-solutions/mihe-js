@@ -1,0 +1,25 @@
+{
+  // The published build of @mihe-dev/js (scripts/build-packages.sh).
+  // Development type-checks through ../tsconfig.json instead; this one emits,
+  // and resolves @mihe-dev/protocol to the protocol package's built types so the
+  // emitted declarations import it by name, as an installed copy will.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "rootDir": "src",
+    "types": [],
+    "paths": {
+      "@mihe-dev/protocol": ["../dist-packages/protocol/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}
