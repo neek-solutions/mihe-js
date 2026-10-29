@@ -493,7 +493,9 @@ describe("a frontend action that waits on the user", () => {
       await vi.advanceTimersByTimeAsync(7_000);
       await running;
       expect(warn).toHaveBeenCalledTimes(2);
-      expect(String(warn.mock.calls[1]![0])).toContain("finished after the runtime stopped waiting");
+      expect(String(warn.mock.calls[1]![0])).toContain("finished after 12s");
+      // It can't know this action's own limit, so it says the default and how to raise it.
+      expect(String(warn.mock.calls[1]![0])).toContain("timeoutSeconds");
     } finally {
       warn.mockRestore();
       vi.useRealTimers();

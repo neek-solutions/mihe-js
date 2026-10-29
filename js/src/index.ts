@@ -18,7 +18,8 @@
  */
 
 export { Mihe, createMihe, SDK_VERSION, ASSISTANT_PANEL_ID } from "./mihe";
-export type { ChatMessage, MiheOptions, MiheState, VoiceControls } from "./mihe";
+export type { ChatMessage, DescribeAttachment, MiheOptions, MiheState, PendingAttachment, VoiceControls } from "./mihe";
+export { acceptsFile, ATTACHMENT_TIMEOUT_MS, MAX_ATTACHMENTS } from "./mihe";
 
 export {
   chartDeclaration,
@@ -38,8 +39,14 @@ export type {
 } from "./declarations";
 
 export { mountWidget, defineMiheAssistant, ELEMENT_NAME } from "./widget/element";
+export { mountCall } from "./widget/call";
+export type { CallOptions, MountedCall } from "./widget/call";
 export type { MiheAssistantElement, MountedWidget, WidgetOptions } from "./widget/element";
 export { formatValue, humanizeKey } from "./widget/format";
+export { parseMarkdown, parseInline, safeHref } from "./markdown";
+export type { Block as MarkdownBlock, Inline as MarkdownInline } from "./markdown";
+export { appView, fillSummary, formatField, hintedView, DESCRIBE_TIMEOUT_MS } from "./card-view";
+export type { CardLine, CardView, DescribeProposal, ProposalDescription } from "./card-view";
 
 export { VoiceSession, voiceUrl } from "./voice";
 export type { VoiceEvent, VoiceState, VoiceSessionOptions } from "./voice";

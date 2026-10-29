@@ -13,4 +13,10 @@ export type UserClaims = {
 /**
  * The customer app's own user id (`externalUserId` in the spec's data model).
  */
-subject: string, role?: string | null, permissions: Array<Permission>, };
+subject: string, role?: string | null, permissions: Array<Permission>, 
+/**
+ * Whether this person may use voice (amendment 104). `Some(false)` from
+ * the app's token turns it off for them, as a paid feature or a role
+ * would; unset leaves it to the app's settings, as before.
+ */
+voice?: boolean | null, };

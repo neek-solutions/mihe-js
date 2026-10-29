@@ -125,16 +125,23 @@ function markHintDone(): void {
   }
 }
 
-function useViewport(): { width: number; height: number } {
-  const read = () => ({
-    width: typeof window === "undefined" ? 1024 : window.innerWidth,
-    height: typeof window === "undefined" ? 768 : window.innerHeight,
-  });
-  const [size, setSize] = useState(read);
+/**
+ * The window's size, measured after mount. `measured` is false until then.
+ *
+ * Measuring during render put a server-rendered orb in the wrong place for
+ * good: the server has no window, so it guessed 1024×768, and on hydration
+ * React keeps the server's inline style when it differs from the client's
+ * (a mismatched attribute isn't patched). The orb ended up mid-page on any
+ * wider screen. So the first render, on the server and in the browser alike,
+ * draws no orb, and the measured one follows.
+ */
+function useViewport(): { width: number; height: number; measured: boolean } {
+  const [size, setSize] = useState({ width: 0, height: 0, measured: false });
   useEffect(() => {
-    const onResize = () => setSize(read());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const read = () => setSize({ width: window.innerWidth, height: window.innerHeight, measured: true });
+    read();
+    window.addEventListener("resize", read);
+    return () => window.removeEventListener("resize", read);
   }, []);
   return size;
 }
@@ -166,6 +173,7 @@ export function Orb({
     open,
     voice,
     proposals,
+    cardViews,
     respondToProposal,
     lastError,
     connection,
@@ -485,7 +493,7 @@ export function Orb({
     );
   }
 
-  if (!showOrb) return null;
+  if (!showOrb || !viewport.measured) return null;
 
   const ringState = !voiceLive
     ? "idle"
@@ -564,6 +572,7 @@ export function Orb({
             <ConfirmationCard
               key={proposal.proposalId}
               proposal={proposal}
+              view={cardViews[proposal.proposalId]}
               onRespond={respondToProposal}
             />
           ))}

@@ -1,6 +1,6 @@
 {
   "name": "@mihe-dev/react",
-  "version": "0.1.0",
+  "version": "0.2.8",
   "description": "Embed an app-aware AI assistant in your React app.",
   "type": "module",
   "main": "./src/index.ts",
@@ -12,7 +12,7 @@
     "react": ">=18"
   },
   "dependencies": {
-    "@mihe-dev/js": "0.1.0",
-    "@mihe-dev/protocol": "0.1.0"
+    "@mihe-dev/js": "0.2.8",
+    "@mihe-dev/protocol": "0.1.1"
   }
 }

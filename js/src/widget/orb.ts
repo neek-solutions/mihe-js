@@ -121,6 +121,7 @@ export class Orb {
   private previousVoiceState: string = "idle";
   private faceKey: unknown = undefined;
   private drawnProposals: unknown = undefined;
+  private drawnViews: unknown = undefined;
   private failedIcon: string | null = null;
   private ringFrame = 0;
   private stopLevel: (() => void) | null = null;
@@ -343,9 +344,11 @@ export class Orb {
     // The card, out of the orb. The session waits for this tap, and it is
     // the same card the panel draws, from the same payload.
     this.cards.hidden = this.menuOpen || proposals.length === 0;
-    if (proposals !== this.drawnProposals) {
+    // A card is redrawn when the list changes, and when its view arrives (amendment 99).
+    if (proposals !== this.drawnProposals || this.state.cardViews !== this.drawnViews) {
       this.drawnProposals = proposals;
-      replace(this.cards, ...proposals.map((p) => confirmationCard(p, this.mihe.respondToProposal)));
+      this.drawnViews = this.state.cardViews;
+      replace(this.cards, ...proposals.map((p) => confirmationCard(p, this.mihe.respondToProposal, this.state.cardViews[p.proposalId])));
     }
 
     const bubble: { text: string; tone: "quiet" | "error" } | null =

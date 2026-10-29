@@ -26,13 +26,14 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { AssistantCall } from "./call";
 import { ConfirmationCard } from "./card";
+import { Markdown } from "./markdown";
 import { LAUNCHER_BG, LAUNCHER_INK, LauncherIcon } from "./launcher-icon";
 import type { WidgetSettings } from "@mihe-dev/protocol";
 
 import { Orb, type OrbCorner, type OrbVoiceMode } from "./orb";
-import { ASSISTANT_PANEL_ID, useAssistant, type VoiceControls } from "./provider";
-import type { VoiceState } from "@mihe-dev/js";
+import { ASSISTANT_PANEL_ID, useAssistant } from "./provider";
 
 export { ASSISTANT_PANEL_ID };
 // Still importable from here, where they lived before `card.tsx`.
@@ -59,9 +60,10 @@ export interface AssistantPanelProps {
   /** Merged over the panel's own styles, for sizing and positioning. */
   style?: CSSProperties;
   /**
-   * Show the microphone and hands-free buttons beside the input, when voice
-   * is on for the app. True by default. The orb turns them off: in that form
-   * voice lives in the orb, and two ways into it would be one too many.
+   * Offer a call from the header ("Talk"), when voice is on for the app.
+   * True by default. While a call is on the panel shows the call instead of
+   * the conversation (amendment 105): the chat box itself never has a
+   * microphone. The orb turns this off: in that form voice lives in the orb.
    */
   showVoice?: boolean;
 }
@@ -228,6 +230,7 @@ export function AssistantPanel({
   const {
     messages,
     proposals,
+    cardViews,
     busy,
     connection,
     lastError,
@@ -237,6 +240,10 @@ export function AssistantPanel({
     voice,
     assistantName,
     widgetSettings,
+    attach,
+    attachAccept,
+    attachments,
+    removeAttachment,
   } = useAssistant();
   // The modes the app allows. Offering one it does not would be a button the
   // runtime refuses.
@@ -247,6 +254,12 @@ export function AssistantPanel({
   const heading = title ?? assistantName ?? "Assistant";
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const reading = attachments.some((a) => a.status === "reading");
+  // Voice is a call, not part of the chat box (amendment 105).
+  const canTalk = showVoice && voice.available && voiceModes.length > 0;
+  const onCall = showVoice && voice.state !== "idle" && voice.state !== "error";
+  const attachFile = (file: File) => attach(file);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -277,6 +290,17 @@ export function AssistantPanel({
           />
           {heading}
         </div>
+        {canTalk && !onCall && (
+          <button
+            type="button"
+            onClick={() => voice.start(voiceModes.includes("hands-free") ? { handsFree: true } : undefined)}
+            disabled={connection !== "open"}
+            style={styles.talk}
+            title="Talk instead of typing"
+          >
+            Talk
+          </button>
+        )}
         {showClose && (
           <button
             type="button"
@@ -289,6 +313,10 @@ export function AssistantPanel({
         )}
       </header>
 
+      {onCall ? (
+        // The call in place of the conversation: no transcript to read along, no chat box.
+        <div style={styles.callView}><AssistantCall /></div>
+      ) : (<>
       <div ref={scrollRef} style={styles.transcript}>
         {messages.length === 0 && (
           <p style={styles.empty}>
@@ -302,7 +330,14 @@ export function AssistantPanel({
             key={message.id}
             style={message.role === "user" ? styles.userBubble : styles.assistantBubble}
           >
-            {message.text}
+            {message.attachments && message.attachments.length > 0 && (
+              <div style={styles.sentPictures}>
+                {message.attachments.map((a, i) =>
+                  a.previewUrl ? <img key={i} src={a.previewUrl} alt={a.name} title={a.name} style={styles.sentPicture} /> : <span key={i} style={styles.sentName}>📎 {a.name}</span>,
+                )}
+              </div>
+            )}
+            {message.role === "user" ? message.text : <Markdown text={message.text} />}
             {message.streaming && message.text === "" && (
               <span style={styles.thinking}>thinking…</span>
             )}
@@ -336,6 +371,7 @@ export function AssistantPanel({
           <ConfirmationCard
             key={proposal.proposalId}
             proposal={proposal}
+            view={cardViews[proposal.proposalId]}
             onRespond={respondToProposal}
           />
         ))}
@@ -364,6 +400,22 @@ export function AssistantPanel({
         )}
       </div>
 
+      {attachments.length > 0 && (
+        <ul style={styles.chips} aria-label="Attached pictures">
+          {attachments.map((a) => (
+            <li key={a.id} style={{ ...styles.chip, ...(a.status === "failed" ? styles.chipFailed : null) }}>
+              {a.previewUrl && <img src={a.previewUrl} alt="" style={styles.chipThumb} />}
+              <span style={styles.chipText}>
+                <span style={styles.chipName}>{a.name}</span>
+                <span style={styles.chipStatus} role={a.status === "failed" ? "alert" : undefined}>
+                  {a.status === "reading" ? "Reading…" : a.status === "ready" ? "Ready" : a.error ?? "Couldn't read it"}
+                </span>
+              </span>
+              <button type="button" style={styles.chipRemove} aria-label={`Remove ${a.name}`} onClick={() => removeAttachment(a.id)}>✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
       <form
         style={styles.composer}
         onSubmit={(event) => {
@@ -371,17 +423,31 @@ export function AssistantPanel({
           submit();
         }}
       >
-        {showVoice && voice.available && voiceModes.length > 0 && (
-          <VoiceControl
-            voice={voice}
+        {attachAccept && (
+          <button
+            type="button"
+            style={styles.clip}
+            aria-label="Attach a picture"
+            title="Attach a picture"
             disabled={connection !== "open"}
-            allowHold={voiceModes.includes("hold")}
-            allowHandsFree={voiceModes.includes("hands-free")}
-          />
+            onClick={() => fileRef.current?.click()}
+          >
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15.5 9.5l-5.6 5.6a3.5 3.5 0 0 1-5-5L10.6 4.4a2.3 2.3 0 0 1 3.3 3.3L8.3 13.3a1.1 1.1 0 0 1-1.6-1.6L11.8 6.6" />
+            </svg>
+          </button>
         )}
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onPaste={(event) => {
+            // A pasted screenshot attaches; pasted words paste as usual.
+            if (!attachAccept) return;
+            const files = Array.from(event.clipboardData?.files ?? []);
+            if (!files.length) return;
+            event.preventDefault();
+            for (const file of files) attachFile(file);
+          }}
           placeholder={placeholder}
           aria-label="Message"
           style={styles.input}
@@ -389,224 +455,30 @@ export function AssistantPanel({
         />
         <button
           type="submit"
-          disabled={busy || !draft.trim() || connection !== "open"}
+          disabled={busy || connection !== "open" || reading || (!draft.trim() && !attachments.some((a) => a.status === "ready"))}
           style={styles.send}
         >
           Send
         </button>
+        {/* Last, so the message box stays the composer's first input. */}
+        {attachAccept && (
+          <input
+            ref={fileRef}
+            type="file"
+            accept={attachAccept}
+            multiple
+            hidden
+            onChange={(event) => {
+              for (const file of Array.from(event.target.files ?? [])) attachFile(file);
+              event.target.value = "";
+            }}
+          />
+        )}
       </form>
+      </>)}
     </section>
   );
 }
-
-const PULSE_KEYFRAMES = `
-@keyframes mihe-pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.6); opacity: 0.45; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mihe-pulse { animation: none !important; }
-}
-`;
-
-/**
- * The microphone, in whichever of its two modes is running.
- *
- * Idle, it offers both: tap to hold-and-talk, or switch to hands-free. Once a
- * session is live the two behave differently enough to be different controls —
- * one is held, the other is a state you are in — so only the running one is
- * shown, with a way out.
- */
-function VoiceControl({
-  voice,
-  disabled,
-  allowHold,
-  allowHandsFree,
-}: {
-  voice: VoiceControls;
-  disabled: boolean;
-  allowHold: boolean;
-  allowHandsFree: boolean;
-}) {
-  // Connecting is excluded deliberately. A hands-free session that is still
-  // being set up used to render the pulsing live button, which says "the
-  // microphone is open" — the one thing that is not yet true, and the reason
-  // someone talks into a session that cannot hear them.
-  const live =
-    voice.state !== "idle" && voice.state !== "error" && voice.state !== "connecting";
-
-  if (live && voice.handsFree) {
-    return (
-      <>
-        {/* Inline styles cannot declare keyframes. Reduced motion is honoured
-            because a pulse is decoration here — the title and aria-label carry
-            the same information for anyone who does not want movement. */}
-        <style>{PULSE_KEYFRAMES}</style>
-        <button
-        type="button"
-        aria-label="Stop hands-free voice"
-        aria-pressed
-        disabled={disabled}
-        onClick={voice.stop}
-        style={{ ...styles.mic, ...styles.micLive }}
-        title={
-          voice.state === "speaking"
-            ? "Speaking — just talk to interrupt"
-            : "Listening — say anything"
-        }
-      >
-        <span
-          className="mihe-pulse"
-          style={{
-            ...styles.pulse,
-            // Speaking and listening both pulse, at different rates, because
-            // the one thing a hands-free user cannot tell from a static icon
-            // is whether the microphone is actually open.
-            animationDuration: voice.state === "speaking" ? "0.8s" : "2s",
-          }}
-        />
-        </button>
-      </>
-    );
-  }
-
-  if (live) {
-    return (
-      <PushToTalk
-        state={voice.state}
-        onStart={() => voice.start()}
-        onPress={voice.press}
-        onRelease={voice.release}
-        disabled={disabled}
-      />
-    );
-  }
-
-  return (
-    <>
-      {allowHold && (
-        <PushToTalk
-          state={voice.state}
-          onStart={() => voice.start()}
-          onPress={voice.press}
-          onRelease={voice.release}
-          disabled={disabled}
-        />
-      )}
-      {allowHandsFree && (
-        <button
-          type="button"
-          aria-label="Start hands-free voice"
-          disabled={disabled}
-          onClick={() => voice.start({ handsFree: true })}
-          style={styles.handsFree}
-          title="Hands-free — talk without holding anything"
-        >
-          {"\u221E"}
-        </button>
-      )}
-    </>
-  );
-}
-
-/**
- * The push-to-talk button.
- *
- * Hold to speak, release to send — the same gesture on a mouse, a touchscreen,
- * and a keyboard. Three details are doing real work:
- *
- * - **`onPointerDown` rather than `onClick`**, because the press has to begin
- *   the utterance and the release has to end it. It is also the user gesture
- *   iOS Safari requires before any audio can start, which is why the first
- *   press opens the session rather than an effect doing it on mount.
- * - **`setPointerCapture`**, so a finger that slides off the button while
- *   speaking still ends the utterance on release. Without it the pointer-up
- *   lands on whatever is underneath and the microphone stays open.
- * - **Space and Enter**, held rather than tapped, so the button is usable
- *   without a pointer at all. `repeat` is ignored, because a held key fires
- *   `keydown` continuously.
- */
-function PushToTalk({
-  state,
-  onStart,
-  onPress,
-  onRelease,
-  disabled,
-}: {
-  state: VoiceState;
-  onStart: () => void;
-  onPress: () => void;
-  onRelease: () => void;
-  disabled: boolean;
-}) {
-  const connecting = state === "connecting";
-  // Connecting is not idle and not ready: the session exists but the
-  // microphone is shut until the provider accepts its configuration. Treating
-  // it as live meant the button looked armed and swallowed presses.
-  const live = state !== "idle" && state !== "error" && !connecting;
-  const recording = state === "recording";
-
-  const begin = (event: { currentTarget: HTMLElement; pointerId?: number }) => {
-    if (connecting) return;
-    if (!live) {
-      onStart();
-      return;
-    }
-    if (event.pointerId !== undefined) {
-      event.currentTarget.setPointerCapture?.(event.pointerId);
-    }
-    onPress();
-  };
-
-  return (
-    <button
-      type="button"
-      aria-label={
-        connecting
-          ? "Setting up the microphone"
-          : !live
-            ? "Start voice"
-            : recording
-              ? "Release to send"
-              : "Hold to speak"
-      }
-      aria-busy={connecting}
-      aria-pressed={recording}
-      disabled={disabled || connecting}
-      style={{
-        ...styles.mic,
-        ...(recording ? styles.micRecording : null),
-        ...(live && !recording ? styles.micLive : null),
-      }}
-      onPointerDown={begin}
-      onPointerUp={() => live && onRelease()}
-      onPointerCancel={() => live && onRelease()}
-      onKeyDown={(event) => {
-        if (event.repeat) return;
-        if (event.key === " " || event.key === "Enter") {
-          event.preventDefault();
-          begin(event as unknown as { currentTarget: HTMLElement });
-        }
-      }}
-      onKeyUp={(event) => {
-        if (live && (event.key === " " || event.key === "Enter")) {
-          event.preventDefault();
-          onRelease();
-        }
-      }}
-      title={
-        state === "thinking"
-          ? "Thinking…"
-          : state === "speaking"
-            ? "Speaking — press to interrupt"
-            : undefined
-      }
-    >
-      {state === "thinking" ? "…" : "\u{1F399}"}
-    </button>
-  );
-}
-
 
 const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
 
@@ -731,6 +603,20 @@ const styles = {
     borderRadius: 8,
     fontSize: 13,
   },
+  chips: { listStyle: "none", margin: 0, padding: "8px 12px 0", display: "flex", flexWrap: "wrap", gap: 6, borderTop: "1px solid #e2e8f0" },
+  chip: { display: "flex", alignItems: "center", gap: 6, padding: "4px 4px 4px 6px", borderRadius: 8, background: "#f1f5f9", maxWidth: "100%", font: `12px ${FONT}` },
+  chipFailed: { background: "#fef2f2", color: "#991b1b" },
+  chipThumb: { width: 28, height: 28, borderRadius: 4, objectFit: "cover", flex: "none" },
+  chipText: { display: "flex", flexDirection: "column", minWidth: 0 },
+  chipName: { maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 },
+  chipStatus: { color: "inherit", opacity: 0.75 },
+  chipRemove: { border: "none", background: "transparent", cursor: "pointer", width: 28, height: 28, borderRadius: 6, color: "inherit", fontSize: 12 },
+  clip: { flex: "none", width: 38, display: "grid", placeItems: "center", borderRadius: 8, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", color: "#475569" },
+  sentPictures: { display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 },
+  sentPicture: { width: 64, height: 64, borderRadius: 6, objectFit: "cover", display: "block" },
+  sentName: { fontSize: 12, opacity: 0.85 },
+  talk: { minHeight: 32, padding: "0 14px", borderRadius: 999, border: "1px solid #cbd5e1", background: "#fff", cursor: "pointer", font: `600 13px ${FONT}`, marginLeft: "auto", marginRight: 4 },
+  callView: { flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 12, borderTop: "1px solid #e2e8f0" },
   composer: {
     display: "flex",
     gap: 8,
@@ -739,6 +625,7 @@ const styles = {
   },
   input: {
     flex: 1,
+    minWidth: 0,
     padding: "9px 12px",
     borderRadius: 8,
     border: "1px solid #cbd5e1",
@@ -786,6 +673,7 @@ const styles = {
     animationTimingFunction: "ease-in-out",
   },
   send: {
+    flex: "none",
     padding: "9px 16px",
     borderRadius: 8,
     border: "none",

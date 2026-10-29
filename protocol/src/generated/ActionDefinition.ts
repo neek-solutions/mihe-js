@@ -55,4 +55,10 @@ endpoint?: string | null,
  * Customer kill switch from the admin dashboard (spec §14.3). A disabled
  * action is never shown to the model and never executes.
  */
-enabled: boolean, };
+enabled: boolean, 
+/**
+ * How long this action may take, 5 to 120 seconds (amendment 103). For an
+ * action that is slow by nature, such as one that calls a model. Unset
+ * follows the app's setting, then the runtime's default.
+ */
+timeoutSeconds?: number | null, };

@@ -93,6 +93,20 @@ Theme it with `--mihe-accent`, `--mihe-radius` and `--mihe-font` on the
 same corner, such as a support chat, lift Mihe above it:
 `mountWidget(mihe, { offset: { bottom: 92 } })`.
 
+Voice is a call, apart from chat. To run one from your own button and show it
+where you choose, start it and mount the call view, which shows nothing until
+there's a call:
+
+```ts
+import { mountCall } from "@mihe-dev/js";
+
+talkButton.onclick = () => mihe.voice.start({ handsFree: true, openPanel: false });
+mountCall(mihe);                                            // a bar at the foot of the window
+mountCall(mihe, { layout: "inline", container: toolbar });  // or inside an element of yours
+```
+
+See [a call of your own](https://mihe.dev/docs/voice#a-call-of-your-own).
+
 Or draw your own UI. State is a snapshot you subscribe to:
 
 ```ts

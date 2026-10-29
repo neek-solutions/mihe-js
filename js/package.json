@@ -1,6 +1,6 @@
 {
   "name": "@mihe-dev/js",
-  "version": "0.1.0",
+  "version": "0.2.8",
   "description": "Embed an app-aware AI assistant in any web app, with or without a framework.",
   "type": "module",
   "main": "./src/index.ts",
@@ -9,6 +9,6 @@
   "files": ["src"],
   "license": "MIT",
   "dependencies": {
-    "@mihe-dev/protocol": "0.1.0"
+    "@mihe-dev/protocol": "0.1.1"
   }
 }

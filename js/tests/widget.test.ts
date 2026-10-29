@@ -312,7 +312,7 @@ describe("settings from the dashboard", () => {
   it("choose the form, with no deploy of the host app", async () => {
     await connected({}, true, settings({ form: "classic" }));
     launcher().click();
-    expect(visible(query("button[aria-label='Start voice']"))).toBe(true);
+    expect(visible(query("button.talk"))).toBe(true);
   });
 
   it("are overridden in code", async () => {
@@ -328,10 +328,9 @@ describe("settings from the dashboard", () => {
     expect(menuItems()).toEqual(["Chat", "Hold to talk"]);
   });
 
-  it("hide a mode the app does not allow from the classic panel too", async () => {
-    await connected({ form: "classic", defaultOpen: true }, true, settings({ voiceModes: ["hold"] }));
-    expect(visible(query("button[aria-label='Start voice']"))).toBe(true);
-    expect(visible(query("button[aria-label='Start hands-free voice']"))).toBe(false);
+  it("offer a call from the classic panel only when the app allows a voice mode", async () => {
+    await connected({ form: "classic", defaultOpen: true }, true, settings({ voiceModes: [] }));
+    expect(visible(query("button.talk"))).toBe(false);
   });
 
   it("can be written as attributes, for a widget placed in HTML", async () => {
@@ -343,13 +342,35 @@ describe("settings from the dashboard", () => {
 });
 
 describe("the classic form", () => {
-  it("opens from its launcher, and its panel has the microphone", async () => {
+  it("opens from its launcher, offers a call from the header, and has no microphone in its chat box (amendment 105)", async () => {
     await connected({ form: "classic" }, true);
     expect(launcher().getAttribute("aria-label")).toBe("Open Assistant");
     launcher().click();
     expect(panelShown()).toBe(true);
     expect(visible(launcher())).toBe(false);
-    expect(visible(query("button[aria-label='Start voice']"))).toBe(true);
+    expect(visible(query("button.talk"))).toBe(true);
+    expect(query("form button.mic")).toBeNull();
+  });
+
+  it("shows the call in place of the conversation while it lasts, with one line of what's said", async () => {
+    await connected({ form: "classic", defaultOpen: true }, true);
+    const setVoice = (patch: object) => (mihe as unknown as { setVoice: (p: object) => void }).setVoice(patch);
+    setVoice({ state: "speaking", handsFree: true, caption: "I've made the heading larger" });
+    expect(visible(query(".call"))).toBe(true);
+    expect(visible(query("input.input"))).toBe(false);
+    expect(query(".call-line")?.textContent).toBe("I've made the heading larger");
+    setVoice({ state: "listening", caption: "" });
+    expect(query(".call-line")?.textContent).toBe("I've made the heading larger");
+    // A failed request says why on its own line until the next starts (amendment 106).
+    (mihe as unknown as { setState: (p: object) => void }).setState({ lastError: "The model didn't answer in time." });
+    setVoice({ state: "speaking", caption: "That couldn't be done just now." });
+    expect(visible(query(".call-failed"))).toBe(true);
+    expect(query(".call-failed")?.textContent).toBe("The model didn't answer in time.");
+    setVoice({ state: "thinking", caption: "" });
+    expect(visible(query(".call-failed"))).toBe(false);
+    setVoice({ state: "idle" });
+    expect(visible(query(".call"))).toBe(false);
+    expect(visible(query("input.input"))).toBe(true);
   });
 
   it("hides its launcher on request, so the user does not get two", async () => {
@@ -405,11 +426,32 @@ describe("the panel", () => {
     // A button replaced mid-press loses its pointer capture: the release
     // lands on something else and the microphone stays open.
     await connected({ form: "classic", defaultOpen: true }, true);
-    const button = query<HTMLButtonElement>("button[aria-label='Start voice']")!;
+    const setVoice = (patch: object) => (mihe as unknown as { setVoice: (p: object) => void }).setVoice(patch);
+    setVoice({ state: "listening", handsFree: false });
+    const button = query<HTMLButtonElement>("button.call-hold")!;
     for (const state of ["recording", "thinking", "speaking", "listening"]) {
-      (mihe as unknown as { setVoice: (patch: object) => void }).setVoice({ state });
-      expect(query("button.mic")).toBe(button);
+      setVoice({ state });
+      expect(query("button.call-hold")).toBe(button);
     }
-    expect(button.getAttribute("aria-label")).toBe("Hold to speak");
+    setVoice({ state: "recording" });
+    expect(button.textContent).toBe("Release to send");
+  });
+});
+
+describe("the paperclip (amendment 102)", () => {
+  it("shows only when the app describes pictures, and a pasted picture becomes a chip", async () => {
+    await connected({ form: "classic" });
+    mihe!.open();
+    expect(visible(query("button.clip"))).toBe(false);
+
+    mihe!.update({ describeAttachment: async () => "a sandy mood board" });
+    expect(visible(query("button.clip"))).toBe(true);
+    const input = query<HTMLInputElement>("input.input")!;
+    const paste = new Event("paste", { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown };
+    paste.clipboardData = { files: [new File([new Uint8Array([1])], "board.png", { type: "image/png" })] };
+    input.dispatchEvent(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(query(".chip .chip-status")?.textContent).toBe("Ready"));
+    expect(query(".chip .chip-name")?.textContent).toBe("board.png");
   });
 });

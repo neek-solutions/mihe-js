@@ -33,6 +33,8 @@ export type { VoiceEvent, VoiceState, VoiceSessionOptions } from "@mihe-dev/js";
 export { MicrophoneCapture, SpeakerQueue, toPcm16, fromPcm16 } from "@mihe-dev/js";
 
 export { AssistantWidget, AssistantPanel } from "./widget";
+export { AssistantCall, useCallOn } from "./call";
+export type { AssistantCallProps } from "./call";
 export { MiheMark } from "./mark";
 export type { AssistantWidgetProps, AssistantPanelProps } from "./widget";
 export type { OrbCorner, OrbVoiceMode } from "./orb";
@@ -83,5 +85,7 @@ export type { ContextReport } from "@mihe-dev/js";
 export type { CommandContext, CommandResult } from "@mihe-dev/js";
 
 export { HighlightEngine, COMPONENT_ATTRIBUTE } from "@mihe-dev/js";
+export { hintedView } from "@mihe-dev/js";
+export type { CardLine, CardView, DescribeProposal, ProposalDescription } from "@mihe-dev/js";
 
 export { PROTOCOL_VERSION, VOICE_SAMPLE_RATE } from "@mihe-dev/protocol";

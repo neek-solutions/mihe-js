@@ -21,9 +21,10 @@ import type { AssistantStore, QueryParamDeclaration, TableRow } from "./store";
 export const ACTION_SLOW_MS = 5_000;
 
 /**
- * How long the runtime waits for a command's answer (`COMMAND_ACK_TIMEOUT`
- * in the runtime's session.rs). Past it, the assistant is told the command
- * failed.
+ * How long the runtime waits for a command's answer by default
+ * (`COMMAND_ACK_TIMEOUT` in the runtime's session.rs); an action's
+ * `timeoutSeconds` or the app's setting can make it longer (amendment 103).
+ * Past it, the assistant is told the command failed.
  */
 export const RUNTIME_ACK_WAIT_MS = 10_000;
 
@@ -204,16 +205,18 @@ export async function executeCommand(
       const slow = setTimeout(() => {
         console.warn(
           `[mihe] The "${actionName}" handler has run for ${ACTION_SLOW_MS / 1000}s. ` +
-            `The runtime waits ${RUNTIME_ACK_WAIT_MS / 1000}s, then tells the assistant it failed. ` +
+            `The runtime waits ${RUNTIME_ACK_WAIT_MS / 1000}s unless the action (timeoutSeconds) or the app sets longer, then tells the assistant it failed. ` +
             "If it is waiting for the user, open the UI they need and return at once (say what you opened); " +
             "they finish it there.",
         );
       }, ACTION_SLOW_MS);
       const late = () => {
         if (Date.now() - started > RUNTIME_ACK_WAIT_MS) {
+          // The SDK doesn't know this action's limit (amendment 103), only the default.
           console.warn(
-            `[mihe] The "${actionName}" handler finished after the runtime stopped waiting, ` +
-              "so the assistant was told it failed whatever the outcome. Return before the user acts; see the warning above.",
+            `[mihe] The "${actionName}" handler finished after ${Math.round((Date.now() - started) / 1000)}s. ` +
+              `If that was past its time limit (${RUNTIME_ACK_WAIT_MS / 1000}s unless the action sets timeoutSeconds or the app sets longer), ` +
+              "the assistant was told it failed whatever the outcome. If it waits on the user, return before they act; if it is slow by nature, give it timeoutSeconds.",
           );
         }
       };

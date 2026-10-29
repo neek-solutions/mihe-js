@@ -30,3 +30,6 @@ export const micIcon = () =>
   );
 
 export const waveIcon = () => icon(svg("path", { d: "M3 10v0M6.5 7v6M10 4v12M13.5 7v6M17 10v0" }));
+
+/** The chat box's attach button. */
+export const clipIcon = () => icon(svg("path", { d: "M15.5 9.5l-5.6 5.6a3.5 3.5 0 0 1-5-5L10.6 4.4a2.3 2.3 0 0 1 3.3 3.3L8.3 13.3a1.1 1.1 0 0 1-1.6-1.6L11.8 6.6" }));

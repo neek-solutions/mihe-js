@@ -25,11 +25,14 @@ import {
 } from "@mihe-dev/js";
 
 export { SDK_VERSION, ASSISTANT_PANEL_ID } from "@mihe-dev/js";
-export type { ChatMessage, VoiceControls } from "@mihe-dev/js";
+export type { ChatMessage, DescribeAttachment, PendingAttachment, VoiceControls } from "@mihe-dev/js";
 
 export interface AssistantContextValue extends MiheState {
   store: AssistantStore;
   send: (text: string) => void;
+  /** Attach a picture to the next message; the app's `describeAttachment` reads it (amendment 102). */
+  attach: (file: File) => void;
+  removeAttachment: (id: string) => void;
   respondToProposal: (proposalId: string, confirmed: boolean) => void;
   open: () => void;
   close: () => void;
@@ -49,6 +52,9 @@ export function AssistantProvider({
   navigate,
   openModal,
   onActionComplete,
+  describeProposal,
+  describeAttachment,
+  attachmentAccept,
   debug = false,
   children,
 }: AssistantProviderProps) {
@@ -60,7 +66,7 @@ export function AssistantProvider({
   // Callbacks are read at call time, so a caller passing inline arrow
   // functions — which almost everyone does — does not rebuild the session on
   // every render. None of these reconnects.
-  mihe.update({ getUserToken, navigate, openModal, onActionComplete });
+  mihe.update({ getUserToken, navigate, openModal, onActionComplete, describeProposal, describeAttachment, attachmentAccept });
 
   // The session outlives renders; only a genuine identity change rebuilds it.
   useEffect(() => {
@@ -76,6 +82,8 @@ export function AssistantProvider({
       ...state,
       store: mihe.store,
       send: mihe.send,
+      attach: mihe.attach,
+      removeAttachment: mihe.removeAttachment,
       respondToProposal: mihe.respondToProposal,
       open: mihe.open,
       close: mihe.close,

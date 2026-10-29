@@ -382,3 +382,51 @@ describe("prompt", () => {
     expect(mihe.getState().messages.at(-1)?.text).toBe("How do I add a product?");
   });
 });
+
+describe("what a card says (amendment 99)", () => {
+  const proposal = {
+    proposalId: "prop_9", actionName: "update_product", label: "Change a product", description: "Changes a product.", risk: "medium",
+    input: { productId: "p1", productName: "Linen Shirt", price: 13 },
+    inputSchema: { type: "object", "x-mihe-summary": "Change {productName}", properties: { productId: { type: "string", "x-mihe-hidden": true }, productName: { type: "string", title: "Product" }, price: { type: "number", title: "Price" } } },
+    expiresAt: new Date(Date.now() + 60_000).toISOString(), uiConfirmationRequired: false,
+  };
+
+  it("uses the registry's hints when the app doesn't describe cards", async () => {
+    let socket: LiveSocket;
+    ({ mihe, socket } = await connected({}));
+    socket.receive({ type: "action_proposal", data: { turnId: "t1", ...proposal } });
+    expect(mihe!.getState().cardViews.prop_9).toMatchObject({ source: "hints", summary: "Change Linen Shirt" });
+  });
+
+  it("is pending while the app describes it, then shows the app's words", async () => {
+    let finish: (d: unknown) => void = () => {};
+    const describeProposal = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    let socket: LiveSocket;
+    ({ mihe, socket } = await connected({ describeProposal: describeProposal as never }));
+    socket.receive({ type: "action_proposal", data: { turnId: "t1", ...proposal } });
+    expect(mihe!.getState().cardViews.prop_9).toBe("pending");
+    await vi.waitFor(() => expect(describeProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId: "prop_9", input: proposal.input })));
+    finish({ summary: "Change Linen Shirt's price", lines: [{ label: "Price", before: "$12.00", text: "$13.00" }] });
+    await vi.waitFor(() => expect(mihe!.getState().cardViews.prop_9).toMatchObject({ source: "app", lines: [{ before: "$12.00", text: "$13.00" }] }));
+  });
+
+  it("falls back to the hints when the app fails, or doesn't answer in time", async () => {
+    vi.useFakeTimers();
+    try {
+      let socket: LiveSocket;
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      ({ mihe, socket } = await connected({ describeProposal: () => { throw new Error("boom"); } }));
+      socket.receive({ type: "action_proposal", data: { turnId: "t1", ...proposal } });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mihe!.getState().cardViews.prop_9).toMatchObject({ source: "hints" });
+      warn.mockRestore();
+
+      ({ mihe, socket } = await connected({ describeProposal: () => new Promise(() => {}) }));
+      socket.receive({ type: "action_proposal", data: { turnId: "t1", ...proposal, proposalId: "prop_10" } });
+      expect(mihe!.getState().cardViews.prop_10).toBe("pending");
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(mihe!.getState().cardViews.prop_10).toMatchObject({ source: "hints" });
+    } finally { vi.useRealTimers(); }
+  });
+});
+

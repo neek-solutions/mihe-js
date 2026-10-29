@@ -9,6 +9,7 @@
 
 import { StrictMode, act, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -97,6 +98,9 @@ function render(ui: React.ReactNode) {
     );
   });
 }
+
+/** The classic panel's way into a call (amendment 105). */
+const TALK = () => [...container.querySelectorAll("header button")].find((b) => b.textContent === "Talk");
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -278,7 +282,11 @@ describe("fully custom UI", () => {
     expect(seen).not.toBeNull();
     expect(Object.keys(seen!).sort()).toEqual([
       "assistantName",
+      "attach",
+      "attachAccept",
+      "attachments",
       "busy",
+      "cardViews",
       "close",
       "connection",
       "isOpen",
@@ -287,6 +295,7 @@ describe("fully custom UI", () => {
       "messages",
       "open",
       "proposals",
+      "removeAttachment",
       "respondToProposal",
       "send",
       "store",
@@ -682,6 +691,29 @@ describe("the orb (amendment 61)", () => {
     expect(orb().style.borderRadius).toBe("50%");
   });
 
+  it("sits in its corner of the real window, and isn't drawn before the window is measured", async () => {
+    // A server render has no window. Drawing the orb there put it at a guessed
+    // 1024×768 spot that hydration kept, mid-page on a wider screen.
+    const html = renderToString(
+      <AssistantProvider url="ws://runtime.test/v1/ws" publicKey="pk_test_0123456789abcdef" getUserToken={() => Promise.resolve("jwt")}>
+        <AssistantWidget />
+      </AssistantProvider>,
+    );
+    expect(html).not.toContain("Open Assistant");
+
+    const was = { width: window.innerWidth, height: window.innerHeight };
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1489 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 821 });
+    try {
+      await connect(<AssistantWidget />, false);
+      expect(orb().style.left).toBe(`${1489 - 20 - 56}px`);
+      expect(orb().style.top).toBe(`${821 - 20 - 56}px`);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: was.width });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: was.height });
+    }
+  });
+
   it("opens chat directly when chat is the only mode", async () => {
     // Voice is off by default, so this is what most apps see: no menu with
     // one entry in it, just the conversation.
@@ -802,9 +834,10 @@ describe("the orb (amendment 61)", () => {
     expect(container.querySelector("button[aria-label='Start hands-free voice']")).toBeNull();
   });
 
-  it("keeps the microphone in the classic panel", async () => {
+  it("offers a call from the classic panel's header, and never a microphone in its chat box (amendment 105)", async () => {
     await connect(<AssistantWidget form="classic" defaultOpen />, true);
-    expect(container.querySelector("button[aria-label='Start voice']")).not.toBeNull();
+    expect(TALK()).toBeDefined();
+    expect(container.querySelector("form button[aria-label='Start voice'], form button[aria-label='Start hands-free voice']")).toBeNull();
   });
 
   describe("settings from the dashboard", () => {
@@ -820,8 +853,8 @@ describe("the orb (amendment 61)", () => {
       await connect(<AssistantWidget />, true, settings({ form: "classic" }));
       const launcher = container.querySelector<HTMLButtonElement>("button[aria-label='Open Assistant']")!;
       act(() => launcher.click());
-      // The classic panel, with its own microphone, is what opened.
-      expect(container.querySelector("button[aria-label='Start voice']")).not.toBeNull();
+      // The classic panel, with its own way into a call, is what opened.
+      expect(TALK()).toBeDefined();
     });
 
     it("are overridden by a prop in the host app's code", async () => {
@@ -847,14 +880,14 @@ describe("the orb (amendment 61)", () => {
       expect(menuItems()).toEqual(["Chat", "Hold to talk"]);
     });
 
-    it("hide a mode the app does not allow from the classic panel too", async () => {
-      await connect(
-        <AssistantWidget form="classic" defaultOpen />,
-        true,
-        settings({ voiceModes: ["hold"] }),
-      );
-      expect(container.querySelector("button[aria-label='Start voice']")).not.toBeNull();
-      expect(container.querySelector("button[aria-label='Start hands-free voice']")).toBeNull();
+    it("offer a call from the classic panel when the app allows any voice mode", async () => {
+      await connect(<AssistantWidget form="classic" defaultOpen />, true, settings({ voiceModes: ["hold"] }));
+      expect(TALK()).toBeDefined();
+    });
+
+    it("offer no call from the classic panel when the app allows no voice mode", async () => {
+      await connect(<AssistantWidget form="classic" defaultOpen />, true, settings({ voiceModes: [] }));
+      expect(TALK()).toBeUndefined();
     });
   });
 
@@ -1344,3 +1377,39 @@ describe("useAssistantTable with a query", () => {
     expect(JSON.stringify(socket.sent)).not.toContain("card 4242");
   });
 });
+
+describe("a card the app describes (amendment 99)", () => {
+  it("waits for the app's words with Confirm disabled, then shows them", async () => {
+    LiveSocket.last = null;
+    vi.stubGlobal("WebSocket", class { constructor() { return new LiveSocket() as never; } });
+    let finish: (d: unknown) => void = () => {};
+    act(() => {
+      root.render(
+        <AssistantProvider url="ws://runtime.test/v1/ws" publicKey="pk_test_0123456789abcdef" getUserToken={() => Promise.resolve("jwt")}
+          describeProposal={() => new Promise((resolve) => { finish = resolve as never; })}>
+          <AssistantPanel />
+        </AssistantProvider>,
+      );
+    });
+    await act(async () => { await Promise.resolve(); });
+    const socket = LiveSocket.last!;
+    act(() => socket.open());
+    act(() => socket.receive({ type: "action_proposal", data: {
+      turnId: "t1", proposalId: "prop_7", actionName: "update_product", label: "Change a product", description: "Changes a product.", risk: "medium",
+      input: { productId: "p1", productName: "Linen Shirt", price: 13 }, inputSchema: { type: "object" }, expiresAt: new Date(Date.now() + 60_000).toISOString(), uiConfirmationRequired: false,
+    } }));
+    const confirm = () => [...container.querySelectorAll("button")].find((b) => /Confirm|Change price/.test(b.textContent ?? "") && b.closest("[role=group]")) as HTMLButtonElement;
+    expect(container.textContent).toContain("Checking the details");
+    expect(confirm().disabled).toBe(true);
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { finish({ summary: "Change Linen Shirt's price", confirmLabel: "Change price", lines: [{ label: "Price", before: "$12.00", text: "$13.00", images: [{ src: "https://cdn.example/shirt.webp" }] }] }); await Promise.resolve(); await Promise.resolve(); });
+    expect(container.textContent).toContain("Change Linen Shirt's price");
+    expect(container.querySelector("s")?.textContent).toBe("$12.00");
+    expect(container.querySelector("img[src='https://cdn.example/shirt.webp']")).not.toBeNull();
+    expect(container.textContent).not.toContain("p1");
+    expect(confirm().disabled).toBe(false);
+    expect(confirm().textContent).toBe("Change price");
+  });
+});
+

@@ -27,6 +27,7 @@ import {
   type ConnectionState,
   type ProposalPayload,
 } from "./client";
+import { appView, DESCRIBE_TIMEOUT_MS, hintedView, type CardView, type DescribeProposal, type ProposalDescription } from "./card-view";
 import { executeCommand } from "./commands";
 import { formatContextReport } from "./debug";
 import {
@@ -59,7 +60,7 @@ const SCREEN_DEBOUNCE_MS = 60;
  */
 const SCREEN_ARRIVAL_TIMEOUT_MS = 2500;
 
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.8";
 
 /**
  * DOM id of the assistant panel, so a custom trigger can point
@@ -82,7 +83,38 @@ export interface ChatMessage {
    * assistant that suddenly knows their internal policy.
    */
   sources?: KnowledgeSourceRef[];
+  /** Pictures the person attached, shown with their words. Mihe was sent the app's description, not these. */
+  attachments?: { name: string; previewUrl?: string }[];
 }
+
+/**
+ * A picture waiting to go with the next message (amendment 102). The app's
+ * `describeAttachment` turns it into words; only the words reach the runtime.
+ */
+export interface PendingAttachment {
+  id: string;
+  name: string;
+  /** A local preview (`blob:`), for the chip and the sent bubble. */
+  previewUrl?: string;
+  status: "reading" | "ready" | "failed";
+  /** The app's description, once ready. */
+  text?: string;
+  /** Why it couldn't be read, when it failed. */
+  error?: string;
+}
+
+/**
+ * Turn a file the person attached into words for the assistant (amendment
+ * 102). The paperclip appears only when the app passes this: images never go
+ * anywhere the app didn't send them. Throw with a message the person can read
+ * to refuse one.
+ */
+export type DescribeAttachment = (file: File) => Promise<string>;
+
+/** At most this many waiting at once; a picture is read for meaning, not collected. */
+export const MAX_ATTACHMENTS = 4;
+/** How long the app has to describe one before the chip says it couldn't. */
+export const ATTACHMENT_TIMEOUT_MS = 90_000;
 
 /**
  * The voice session, as the UI sees it.
@@ -153,6 +185,12 @@ export interface MiheState {
   messages: ChatMessage[];
   /** Confirmation cards awaiting a decision. */
   proposals: ProposalPayload[];
+  /**
+   * What each card says, by proposal id (amendment 99): the app's description
+   * or the registry's hints. `"pending"` while the app is describing it, when
+   * the card shows its title and keeps Confirm disabled.
+   */
+  cardViews: Record<string, CardView | "pending">;
   /** True from the moment a turn starts until it completes or fails. */
   busy: boolean;
   lastError: string | null;
@@ -181,6 +219,10 @@ export interface MiheState {
   widgetSettings: WidgetSettings | null;
   /** Realtime voice (doc 03). */
   voice: VoiceControls;
+  /** What the app takes as attachments (an `accept` list), or null when it takes none (no `describeAttachment`). */
+  attachAccept: string | null;
+  /** Pictures waiting to go with the next message. */
+  attachments: PendingAttachment[];
 }
 
 export interface MiheOptions {
@@ -228,6 +270,23 @@ export interface MiheOptions {
    * while building an integration; leave it off in production.
    */
   debug?: boolean;
+  /**
+   * Say what a confirmation card means, from the app's own data (amendment
+   * 99): before and after ("$12 → $13"), money in the right currency,
+   * thumbnails of the photos involved. Handed exactly the input that will run;
+   * describe that and nothing else. Without it, or when it returns null, the
+   * card uses the registry's display hints. See `ProposalDescription`.
+   */
+  describeProposal?: DescribeProposal;
+  /**
+   * Let people attach pictures (amendment 102): the chat box gets a paperclip
+   * and takes pasted images, and each is handed here to be described. The
+   * assistant gets the description with the message; the picture stays with
+   * the app. Without it there's no paperclip.
+   */
+  describeAttachment?: DescribeAttachment;
+  /** What the paperclip offers, as an `accept` list. Default `image/*`. */
+  attachmentAccept?: string;
 }
 
 /**
@@ -316,12 +375,15 @@ export class Mihe {
       connection: "idle",
       messages: [],
       proposals: [],
+      cardViews: {},
       busy: false,
       lastError: null,
       isOpen: false,
       assistantName: null,
       launcherIconUrl: null,
       widgetSettings: null,
+      attachAccept: options.describeAttachment ? options.attachmentAccept ?? "image/*" : null,
+      attachments: [],
       voice: {
         available: false,
         state: "idle",
@@ -385,6 +447,8 @@ export class Mihe {
   update(options: Partial<MiheOptions>): void {
     const previous = this.options;
     this.options = { ...previous, ...options };
+    const attachAccept = this.options.describeAttachment ? this.options.attachmentAccept ?? "image/*" : null;
+    if (attachAccept !== this.state.attachAccept) this.setState({ attachAccept });
     const identityChanged =
       this.options.url !== previous.url ||
       this.options.publicKey !== previous.publicKey ||
@@ -446,19 +510,112 @@ export class Mihe {
 
   send = (text: string): void => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    const ready = this.state.attachments.filter((a) => a.status === "ready");
+    // A picture still being read would arrive without its words; the send button waits too.
+    if (this.state.attachments.some((a) => a.status === "reading")) return;
+    if (!trimmed && !ready.length) return;
+
+    // What the assistant reads: the words, then each picture as the app described it.
+    const wire = [
+      trimmed || "(See the attached picture.)",
+      ...ready.map((a) => `[Attached picture "${a.name}", as the app describes it: ${a.text}]`),
+    ].join("\n\n");
 
     // Opening on send is what makes a "Help me add a product" button work as
     // one call: the reply has to be visible somewhere. Harmless for host apps
     // rendering their own always-visible panel.
     const id = messageId("msg");
+    const shown: ChatMessage = { id, role: "user", text: trimmed, ...(ready.length ? { attachments: ready.map((a) => ({ name: a.name, ...(a.previewUrl ? { previewUrl: a.previewUrl } : {}) })) } : {}) };
+    // Failed chips go with the send too; their previews aren't shown anywhere now.
+    for (const a of this.state.attachments) if (a.status === "failed" && a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     this.setState({
       isOpen: true,
-      messages: [...this.state.messages, { id, role: "user", text: trimmed }],
+      messages: [...this.state.messages, shown],
+      attachments: [],
       lastError: null,
     });
-    this.client?.sendMessage(trimmed, id);
+    this.client?.sendMessage(wire, id);
   };
+
+  /**
+   * Attach a picture to the next message (amendment 102). Does nothing when
+   * the app takes no attachments. The app describes it now, so the words are
+   * ready by the time the person presses send.
+   */
+  attach = (file: File): void => {
+    const describe = this.options.describeAttachment;
+    if (!describe) return;
+    const patch = (id: string, change: Partial<PendingAttachment>) =>
+      this.setState({ attachments: this.state.attachments.map((a) => (a.id === id ? { ...a, ...change } : a)) });
+    if (this.state.attachments.length >= MAX_ATTACHMENTS) {
+      this.setState({ lastError: `Up to ${MAX_ATTACHMENTS} pictures at a time.` });
+      return;
+    }
+    if (!acceptsFile(this.state.attachAccept ?? "", file)) {
+      this.setState({ lastError: `"${file.name}" isn't a kind of file this can read.` });
+      return;
+    }
+    const id = messageId("att");
+    const previewUrl = file.type.startsWith("image/") && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : undefined;
+    this.setState({ attachments: [...this.state.attachments, { id, name: file.name || "picture", status: "reading", ...(previewUrl ? { previewUrl } : {}) }], lastError: null });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    Promise.race([
+      Promise.resolve().then(() => describe(file)),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("It took too long to read.")), ATTACHMENT_TIMEOUT_MS); }),
+    ])
+      .then((text) => {
+        const words = typeof text === "string" ? text.trim() : "";
+        patch(id, words ? { status: "ready", text: words } : { status: "failed", error: "Nothing could be read from it." });
+        // On a call nobody presses Send: a picture goes as soon as it's read, so
+        // what's said next can be about it (amendment 102). Once all are read.
+        if (words && this.onCall() && !this.state.attachments.some((a) => a.status === "reading")) this.send("");
+      })
+      .catch((cause: unknown) => patch(id, { status: "failed", error: cause instanceof Error && cause.message ? cause.message : "It couldn't be read." }))
+      .finally(() => clearTimeout(timer));
+  };
+
+  /** A voice call is open (any state but idle, connecting or error). */
+  private onCall(): boolean {
+    return !["idle", "connecting", "error"].includes(this.state.voice.state);
+  }
+
+  /** Take a waiting picture off the next message. */
+  removeAttachment = (id: string): void => {
+    const gone = this.state.attachments.find((a) => a.id === id);
+    if (!gone) return;
+    if (gone.previewUrl) URL.revokeObjectURL(gone.previewUrl);
+    this.setState({ attachments: this.state.attachments.filter((a) => a.id !== id) });
+  };
+
+  /**
+   * Work out what a card says (amendment 99). The app's description when it
+   * gives one in time, else the registry's hints. Until then the card is
+   * pending, so nobody confirms a card whose words are about to change.
+   */
+  private describe(proposal: ProposalPayload): void {
+    const set = (view: CardView | "pending") => {
+      // A card already answered or withdrawn doesn't come back.
+      if (view !== "pending" && !this.state.proposals.some((p) => p.proposalId === proposal.proposalId)) return;
+      this.setState({ cardViews: { ...this.state.cardViews, [proposal.proposalId]: view } });
+    };
+    const describe = this.options.describeProposal;
+    if (!describe) { set(hintedView(proposal)); return; }
+    set("pending");
+    let settled = false;
+    const finish = (d: ProposalDescription | null | undefined) => {
+      if (settled) return; settled = true;
+      set(d && Array.isArray(d.lines) ? appView(d) : hintedView(proposal));
+    };
+    const timer = setTimeout(() => finish(null), DESCRIBE_TIMEOUT_MS);
+    Promise.resolve()
+      .then(() => describe(proposal))
+      .then((d) => { clearTimeout(timer); finish(d); })
+      .catch((cause) => {
+        clearTimeout(timer);
+        console.warn("[mihe] describeProposal failed; the card uses the registry's hints.", cause);
+        finish(null);
+      });
+  }
 
   respondToProposal = (proposalId: string, confirmed: boolean): void => {
     this.client?.confirmAction(proposalId, confirmed);
@@ -792,6 +949,7 @@ export class Mihe {
 
       case "proposal":
         this.setState({ proposals: [...this.state.proposals, event.proposal] });
+        this.describe(event.proposal);
         break;
 
       case "action_status": {
@@ -1042,4 +1200,11 @@ export class Mihe {
         break;
     }
   };
+}
+
+/** Whether a file matches an `accept` list ("image/*,.pdf"). */
+export function acceptsFile(accept: string, file: { name: string; type: string }): boolean {
+  const name = file.name.toLowerCase();
+  return accept.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean).some((rule) =>
+    rule.startsWith(".") ? name.endsWith(rule) : rule.endsWith("/*") ? file.type.toLowerCase().startsWith(rule.slice(0, -1)) : file.type.toLowerCase() === rule);
 }

@@ -61,7 +61,9 @@ follow the [quickstart](https://mihe.dev/docs/quickstart).
   [permissions and risk](https://mihe.dev/docs/permissions-and-risk):
   what it can do, and what needs approval
 - [User tokens](https://mihe.dev/docs/user-tokens)
-- [The widget](https://mihe.dev/docs/widget) and [voice](https://mihe.dev/docs/voice)
+- [The widget](https://mihe.dev/docs/widget) and [voice](https://mihe.dev/docs/voice),
+  including [a call of your own](https://mihe.dev/docs/voice#a-call-of-your-own)
+  with `AssistantCall`
 - [SDK reference](https://mihe.dev/docs/sdk-reference)
 
 ## License
